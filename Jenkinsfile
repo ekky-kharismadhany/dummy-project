@@ -5,7 +5,7 @@
 // Jenkinsfile only calls the shared library and must not gain any stages,
 // environment{}, when{}, or steps of its own.
 
-@Library('platform-trunk-based-standard@v1.0.0') _
+@Library('platform-trunk-based-standard') _
 
 standardPipeline(
     serviceName: 'pokemon-cache-service',
