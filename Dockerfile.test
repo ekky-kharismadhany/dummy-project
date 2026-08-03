@@ -14,6 +14,12 @@
 # this container to a pre-created network (see Makefile's test-docker
 # target) so sibling containers are reachable by alias instead of relying on
 # host-mapped ports.
+#
+# platform-standard's Test stage bind-mounts the Jenkins workspace over /src
+# at `docker run` time (so report files land back on the host), which
+# shadows anything COPY'd into /src at build time. The entrypoint script is
+# therefore installed at /run-tests.sh (outside /src) so it survives that
+# mount instead of being hidden underneath it.
 
 FROM golang:1.25-alpine
 
@@ -25,7 +31,7 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
-COPY scripts/run-tests.sh ./run-tests.sh
-RUN chmod +x run-tests.sh
+COPY scripts/run-tests.sh /run-tests.sh
+RUN chmod +x /run-tests.sh
 
-ENTRYPOINT ["./run-tests.sh"]
+ENTRYPOINT ["/run-tests.sh"]
