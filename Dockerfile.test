@@ -1,0 +1,31 @@
+# syntax=docker/dockerfile:1
+#
+# Runs unit tests AND the testcontainers-go integration suite in one
+# container:
+#   docker build -f Dockerfile.test -t pokemon-cache-service:test .
+#   docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+#       pokemon-cache-service:test
+#
+# docker-cli is installed so testcontainers-go, running inside this
+# container, can talk to the *host's* Docker daemon via the mounted socket
+# (not Docker-in-Docker) and spin up sibling Postgres/Redis containers. See
+# scripts/run-tests.sh and test/integration/network_helper_test.go for the
+# corresponding TEST_NETWORK wiring — pass -e TEST_NETWORK=<name> and attach
+# this container to a pre-created network (see Makefile's test-docker
+# target) so sibling containers are reachable by alias instead of relying on
+# host-mapped ports.
+
+FROM golang:1.25-alpine
+
+RUN apk add --no-cache docker-cli
+
+WORKDIR /src
+
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY . .
+COPY scripts/run-tests.sh ./run-tests.sh
+RUN chmod +x run-tests.sh
+
+ENTRYPOINT ["./run-tests.sh"]

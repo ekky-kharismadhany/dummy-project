@@ -1,93 +1,99 @@
-# Dummy Project
+# pokemon-cache-service
 
+A small Go HTTP service demonstrating three distinct dependency types —
+PostgreSQL, Redis, and a third-party HTTP API (PokéAPI) — used as a test
+consumer of the `platform-standard` Jenkins shared library.
 
+`GET /pokemon/{name}` checks Redis first; on a miss it calls
+[PokéAPI](https://pokeapi.co/docs/v2), caches the result for 5 minutes, and
+logs the lookup to Postgres. Cache and log failures are logged but never fail
+the request.
 
-## Getting started
-
-To make it easy for you to get started with GitLab, here's a list of recommended next steps.
-
-Already a pro? Just edit this README.md and make it your own. Want to make it easy? [Use the template at the bottom](#editing-this-readme)!
-
-## Add your files
-
-- [ ] [Create](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#create-a-file) or [upload](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#upload-a-file) files
-- [ ] [Add files using the command line](https://docs.gitlab.com/ee/gitlab-basics/add-file.html#add-a-file-using-the-command-line) or push an existing Git repository with the following command:
-
+```json
+{
+  "name": "pikachu",
+  "height": 4,
+  "weight": 60,
+  "base_experience": 112,
+  "source": "cache"
+}
 ```
-cd existing_repo
-git remote add origin https://git.bluebird.id/ekky.kharismadhany/dummy-project.git
-git branch -M main
-git push -uf origin main
+
+## Running locally
+
+```bash
+docker-compose up -d postgres redis
+
+export POSTGRES_DSN="postgres://postgres:postgres@localhost:5432/pokemon?sslmode=disable"
+export REDIS_ADDR="localhost:6379"
+export POKEAPI_BASE_URL="https://pokeapi.co/api/v2"
+
+go run ./cmd/server
+# curl http://localhost:8080/pokemon/pikachu
 ```
 
-## Integrate with your tools
+All three env vars default to the localhost values above, so `go run
+./cmd/server` works out of the box once `docker-compose up` has started
+Postgres and Redis.
 
-- [ ] [Set up project integrations](https://git.bluebird.id/ekky.kharismadhany/dummy-project/-/settings/integrations)
+## Running unit tests
 
-## Collaborate with your team
+```bash
+make test
+```
 
-- [ ] [Invite team members and collaborators](https://docs.gitlab.com/ee/user/project/members/)
-- [ ] [Create a new merge request](https://docs.gitlab.com/ee/user/project/merge_requests/creating_merge_requests.html)
-- [ ] [Automatically close issues from merge requests](https://docs.gitlab.com/ee/user/project/issues/managing_issues.html#closing-issues-automatically)
-- [ ] [Enable merge request approvals](https://docs.gitlab.com/ee/user/project/merge_requests/approvals/)
-- [ ] [Set auto-merge](https://docs.gitlab.com/ee/user/project/merge_requests/merge_when_pipeline_succeeds.html)
+Runs `go test ./... -short`. All three dependencies (repository, cache,
+PokéAPI client) are mocked with [go.uber.org/mock](https://github.com/uber-go/mock)
+(gomock) — no network access or Docker required. Mocks live under
+`internal/mock/{cache,repository,pokeapi}` and are generated from the
+`//go:generate mockgen ...` directive next to each interface; regenerate them
+with `make mock` after changing an interface.
 
-## Test and Deploy
+## Running integration tests
 
-Use the built-in continuous integration in GitLab.
+```bash
+make test-integration
+```
 
-- [ ] [Get started with GitLab CI/CD](https://docs.gitlab.com/ee/ci/quick_start/index.html)
-- [ ] [Analyze your code for known vulnerabilities with Static Application Security Testing (SAST)](https://docs.gitlab.com/ee/user/application_security/sast/)
-- [ ] [Deploy to Kubernetes, Amazon EC2, or Amazon ECS using Auto Deploy](https://docs.gitlab.com/ee/topics/autodevops/requirements.html)
-- [ ] [Use pull-based deployments for improved Kubernetes management](https://docs.gitlab.com/ee/user/clusters/agent/)
-- [ ] [Set up protected environments](https://docs.gitlab.com/ee/ci/environments/protected_environments.html)
+Runs `go test ./test/integration/... -tags=integration`. Requires Docker:
+spins up real `postgres:16-alpine` and `redis:7-alpine` containers via
+testcontainers-go (Ryuk left enabled so containers are cleaned up even if
+the run is aborted), plus a local `httptest.Server` stub standing in for
+PokéAPI so tests never hit the real, rate-limited public API.
 
-***
+### Running everything in Docker
 
-# Editing this README
+```bash
+make test-docker
+```
 
-When you're ready to make this README your own, just edit this file and use the handy template below (or feel free to structure it however you want - this is just a starting point!). Thanks to [makeareadme.com](https://www.makeareadme.com/) for this template.
+Builds `Dockerfile.test` and runs both the unit and integration suites
+inside a single container, driven by `scripts/run-tests.sh`. `docker-cli` is
+installed in that image and the container is run with the host's Docker
+socket mounted (not Docker-in-Docker), so testcontainers-go — running
+*inside* the container — talks to the host daemon and spins up sibling
+Postgres/Redis containers on a dedicated per-run bridge network
+(`scripts/run-tests-container.sh`). The test binary and its siblings address
+each other by container alias on that network rather than through
+host-mapped ports; see `test/integration/network_helper_test.go`'s
+`TEST_NETWORK` handling for the container-side wiring. This mirrors the
+Dockerized test-runner pattern used in `map-service-go`.
 
-## Suggestions for a good README
+## CI/CD
 
-Every project is different, so consider which of these sections apply to yours. The sections used in the template are suggestions for most open source projects. Also keep in mind that while a README can be too long and detailed, too long is better than too short. If you think your README is too long, consider utilizing another form of documentation rather than cutting out information.
+This repo's `Jenkinsfile` contains no pipeline logic of its own — it only
+calls the shared library, pinned to an immutable tag:
 
-## Name
-Choose a self-explaining name for your project.
+```groovy
+@Library('platform-standard@v1') _
+standardPipeline(
+    serviceName: 'pokemon-cache-service',
+    nodeLabel: 'slave-01',
+    agentWorkspacePattern: 'workspace/${BRANCH_NAME}/src/git.bluebird.id/platform/pokemon-cache-service'
+)
+```
 
-## Description
-Let people know what your project can do specifically. Provide context and add a link to any reference visitors might be unfamiliar with. A list of Features or a Background subsection can also be added here. If there are alternatives to your project, this is a good place to list differentiating factors.
-
-## Badges
-On some READMEs, you may see small images that convey metadata, such as whether or not all the tests are passing for the project. You can use Shields to add some to your README. Many services also have instructions for adding a badge.
-
-## Visuals
-Depending on what you are making, it can be a good idea to include screenshots or even a video (you'll frequently see GIFs rather than actual videos). Tools like ttygif can help, but check out Asciinema for a more sophisticated method.
-
-## Installation
-Within a particular ecosystem, there may be a common way of installing things, such as using Yarn, NuGet, or Homebrew. However, consider the possibility that whoever is reading your README is a novice and would like more guidance. Listing specific steps helps remove ambiguity and gets people to using your project as quickly as possible. If it only runs in a specific context like a particular programming language version or operating system or has dependencies that have to be installed manually, also add a Requirements subsection.
-
-## Usage
-Use examples liberally, and show the expected output if you can. It's helpful to have inline the smallest example of usage that you can demonstrate, while providing links to more sophisticated examples if they are too long to reasonably include in the README.
-
-## Support
-Tell people where they can go to for help. It can be any combination of an issue tracker, a chat room, an email address, etc.
-
-## Roadmap
-If you have ideas for releases in the future, it is a good idea to list them in the README.
-
-## Contributing
-State if you are open to contributions and what your requirements are for accepting them.
-
-For people who want to make changes to your project, it's helpful to have some documentation on how to get started. Perhaps there is a script that they should run or some environment variables that they need to set. Make these steps explicit. These instructions could also be useful to your future self.
-
-You can also document commands to lint the code or run tests. These steps help to ensure high code quality and reduce the likelihood that the changes inadvertently break something. Having instructions for running tests is especially helpful if it requires external setup, such as starting a Selenium server for testing in a browser.
-
-## Authors and acknowledgment
-Show your appreciation to those who have contributed to the project.
-
-## License
-For open source projects, say how it is licensed.
-
-## Project status
-If you have run out of energy or time for your project, put a note at the top of the README saying that development has slowed down or stopped completely. Someone may choose to fork your project or volunteer to step in as a maintainer or owner, allowing your project to keep going. You can also make an explicit request for maintainers.
+Checkout, Unit Test, Integration Test, and Build Image are all defined in
+`platform-standard`. See that library's README for stage details. Deploy and
+SonarQube stages are intentionally not yet part of `standardPipeline()` and
+will be added once ArgoCD/SonarQube integration is defined for this pipeline.
