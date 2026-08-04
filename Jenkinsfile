@@ -10,5 +10,15 @@
 standardPipeline(
     serviceName: 'pokemon-cache-service',
     nodeLabel: 'built-in',
-    agentWorkspacePattern: 'workspace/${BRANCH_NAME}/src/git.bluebird.id/platform/pokemon-cache-service'
+    agentWorkspacePattern: 'workspace/${BRANCH_NAME}/src/git.bluebird.id/platform/pokemon-cache-service',
+    devKubeconfig: 'e252c04a-fd06-43fd-a8fc-7a267aad560e',
+    devClusterName: 'dev-huawei-cluster-dummy',
+    devNamespace: 'develop',
+    stgNamespace: 'staging',
+    rgrNamespace: 'regress',
+    prdKubeconfig: '9fe21996-2042-44c7-8d60-a23bf7598ae6',
+    prdClusterName: 'prd-huawei-cluster-dummy',
+    prdNamespace: 'prod',
+    devHuaweiProject: 'dev_huawei_project_dummy',
+    prdHuaweiProject: 'prd_huawei_project_dummy',
 )
